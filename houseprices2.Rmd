@@ -1,5 +1,6 @@
+
 ---
-title: House Prices - Advanced Regression Techniques
+title: House Prices - Advanced Regression Techniques2"
 output: html_notebook
 ---
 
@@ -244,7 +245,7 @@ submit1$SalePrice=rf_predict1$data$response
 write.csv(submit1,"submit2.csv",row.names = FALSE)
 ```
 
-
+Find variable importance
 
 
 
