@@ -30,3 +30,131 @@ train$SalePrice=NULL
 train_test=rbind(train,test)
 ```
 
+Find the str of the combined train_test dataset. Also take the summary
+
+```{r}
+str(train_test)
+summary(train_test)
+```
+
+Take all 'Character' class types and convert to factor (categorical) types
+
+```{r}
+trn_tst_chr=train_test %>% 
+  select_if(is.character) %>% 
+  mutate_each(funs(as.factor))
+str(trn_tst_chr)
+```
+
+find the number of NAs in each of the factor variables
+
+```{r}
+colSums(sapply(trn_tst_chr,is.na))
+```
+
+Variables Alley, FireplaceQu, PoolQC, Fence, MiscFeature have very high NAs and are removed
+
+```{r}
+trn_tst_chr$Alley=NULL
+trn_tst_chr$FireplaceQu=NULL
+trn_tst_chr$PoolQC=NULL
+trn_tst_chr$Fence=NULL
+trn_tst_chr$MiscFeature=NULL
+# rerun the command for finding total NAs in the factor variables
+colSums(sapply(trn_tst_chr,is.na))
+```
+
+Perform imputation of missing factor levels using mode. Use 'Impute' function from mlr package 
+
+```{r}
+imp_fctr=impute(trn_tst_chr,classes = list(factor=imputeMode()))
+colSums(sapply(imp_fctr$data,is.na))
+trn_tst_chr=imp_fctr$data
+head(trn_tst_chr,10)
+str(trn_tst_chr)
+#no missing values now
+```
+
+Take all numerics variables separately 
+
+```{r}
+str(train_test)
+fac_cols=colnames(trn_tst_chr)
+trn_tst_num=sapply(train_test,is.numeric)
+trn_tst_numeric=train_test[,trn_tst_num]
+```
+
+Find the number of NAs in the numeric variables
+
+```{r}
+colSums(sapply(trn_tst_numeric,is.na))
+```
+
+There are not too many columns with many NAs. We can impute the missing values by a measure of centrality - mean or median. 
+
+```{r}
+imp_num=impute(trn_tst_numeric,classes = list(integer=imputeMedian()))
+imp_num$desc
+head(imp_num$data,10)
+# again find the total NAs in each variable
+colSums(sapply(imp_num$data,is.na))
+trn_tst_numeric=imp_num$data
+# no NAs left in the model
+```
+
+Separate out the date (year variables) from the numerics variables, also separate out the ID variable
+
+```{r}
+names(trn_tst_numeric)
+trn_test_dat=trn_tst_numeric[,c(1,7,8,26,36,37)]
+#Remove these variables from the trn_tst_numeric dataset
+trn_tst_numeric=trn_tst_numeric[,-c(1,7,8,26,36,37)]
+```
+
+Check and remove any constant features (min variation) as they don't help in machine learning, The percentage of variabilitiy is kept at 5% meaning all features with below 5% variability are removed
+
+```{r}
+trn_tst_numeric=removeConstantFeatures(trn_tst_numeric,perc = 0.05)
+
+```
+
+5 variables with low variance were removed. 
+
+Next visualize intra feature correlation. Load package corrplot
+
+```{r}
+library(corrplot)
+
+numcorr=cor(trn_tst_numeric)
+corrplot(numcorr)
+```
+
+Find variables of high correlation with each other (multicollinearity) and remove them. Use findCorrelation function from Caret package. All variables with more than 65% correlation are flagged and removed
+
+```{r}
+library(DMwR)
+
+highcorvar=findCorrelation(numcorr,cutoff = 0.65)
+# 4 Variables have high multicollinearity
+names(trn_tst_numeric[,highcorvar])
+trn_tst_numeric=trn_tst_numeric[,-highcorvar]
+```
+
+combine numeric, factor and date datasets back together using cbind, remove other datasets that are no longer needed
+
+```{r}
+train_test_mod=cbind(trn_test_dat,trn_tst_numeric,trn_tst_chr)
+sum(is.na(train_test_mod))
+#no missing values
+rm(trn_test_dat,trn_tst_chr,trn_tst_num,trn_tst_numeric,train_test,numcorr,highcorvar,imp_fctr,imp_num,YearBuilt)
+
+```
+
+Separate out the train and test sets. Add the response variable 'SalePrice back to training dataset
+
+```{r}
+mod_train=train_test_mod[1:1460,]
+mod_test=train_test_mod[1461:nrow(train_test_mod),]
+mod_train$SalePrice=SalePrice
+```
+
