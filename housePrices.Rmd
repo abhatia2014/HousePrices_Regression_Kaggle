@@ -1,0 +1,32 @@
+---
+title: House Prices - Advanced Regression Techniques"
+output: html_notebook
+---
+
+load the required packages first
+
+```{r}
+library(mlr,quietly = TRUE)
+library(dplyr,quietly = TRUE)
+library(ggplot2,quietly = TRUE)
+library(caret,quietly = TRUE)
+library(purrr,quietly = TRUE)
+library(data.table,quietly = TRUE,warn.conflicts = FALSE)
+library(readr,quietly = TRUE,warn.conflicts = FALSE)
+```
+
+Load the test and train datasets
+
+```{r}
+train=read_csv("train.csv")
+test=read_csv("test.csv")
+```
+
+Rbind the two datasets to perform feature engineering, will later separate the two datasets again. Remove the variable Sale Price from the training set
+
+```{r}
+SalePrice=train$SalePrice
+train$SalePrice=NULL
+train_test=rbind(train,test)
+```
+
