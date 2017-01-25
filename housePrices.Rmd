@@ -158,3 +158,95 @@ mod_test=train_test_mod[1461:nrow(train_test_mod),]
 mod_train$SalePrice=SalePrice
 ```
 
+We now begin with the supervised machine learning tasks. Create a regression task.
+
+```{r}
+summary(mod_train$SalePrice)
+house_regr=makeRegrTask(data = mod_train,target = "SalePrice")
+house_regr
+```
+
+Build a benchmark experiment for selecting the best learner (algorithm). List all learners that can perform regression learning on this task
+
+```{r}
+regr_learners=listLearners(house_regr)
+```
+
+Select 7 different learners for benchmarking experiment
+
+```{r}
+house_learn=list( makeLearner("regr.gbm",fix.factors.prediction = TRUE),makeLearner("regr.rpart",fix.factors.prediction = TRUE),makeLearner("regr.randomForest",fix.factors.prediction = TRUE), makeLearner("regr.ksvm",fix.factors.prediction = TRUE), makeLearner("regr.nnet",fix.factors.prediction = TRUE))
+house_learn
+```
+
+Set the resampling strategy- we use cross validation with 3 iterations
+
+```{r}
+house_resamp=makeResampleDesc(method = "CV",iters=3)
+house_resamp
+```
+
+list all measure that should be evaluated for selecting the best learner. We'll use R Squared and MSE for evaluation purposes
+
+```{r}
+listMeasures(house_regr)
+house_measures=list(mse,rsq)
+house_measures
+```
+
+Perform the benchmarking experiment to understand the best learners
+
+```{r}
+house_bench=benchmark(learners = house_learn,tasks = house_regr,resamplings = house_resamp,measures = house_measures)
+house_bench
+names(house_bench)
+house_bench$results
+```
+
+Visualize results of the benchmarking experiment
+
+```{r}
+bench_data=getBMRPerformances(house_bench,as.df = TRUE)
+bench_data
+plotBMRBoxplots(house_bench,measure = rsq)+aes(col=learner.id)
+plotBMRSummary(house_bench,measure = rsq)
+```
+
+clearly support vector machine (ksvm) and random forest are the best algorithms giving an rsquared values of almost 85%
+
+We'll now build a prediction model using the RandomForest algorithm. In first iteration, we'll build the model using the default hyperparameters. Subsequently, we'll do hyperparameter tuning
+
+```{r}
+?randomForest
+rf_learn=makeLearner("regr.randomForest",fix.factors.prediction = TRUE,ntree=2000)
+#increase the number of iterations to 5, keep the resampling strategy as cross validation
+rf_resamp=makeResampleDesc(method = "CV",iters=5)
+rf_measures=list(mse,rsq)
+house_trn1=mlr::train(learner = rf_learn,task = house_regr)
+house_trn1
+```
+
+Predict using the trained model using the new test dataset
+
+```{r}
+rf_predict1=predict(house_trn1,newdata = mod_test)
+head(rf_predict1,20)
+rf_predict1$data
+
+```
+
+Make the first submission
+
+```{r}
+submit1=read_csv("sample_submission.csv")
+submit1$SalePrice=NULL
+submit1$SalePrice=rf_predict1$data$response
+write.csv(submit1,"submit2.csv",row.names = FALSE)
+```
+
+Find variable importance
+
+
+
+
+
