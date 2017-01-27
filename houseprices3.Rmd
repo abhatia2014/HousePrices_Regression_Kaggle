@@ -1,6 +1,6 @@
 
 ---
-title: House Prices - Advanced Regression Techniques2
+title: House Prices - Advanced Regression Techniques3
 output: html_notebook
 ---
 
@@ -268,6 +268,7 @@ write.csv(submit1,"submit3.csv",row.names = FALSE)
 ```
 
 Find variable importance
+
 
 
 
