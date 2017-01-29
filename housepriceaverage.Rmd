@@ -1,0 +1,34 @@
+---
+title: "House Price average submission"
+output: html_notebook
+---
+
+Read all submit files 
+
+```{r}
+library(data.table)
+library(dplyr)
+library(readr)
+subpattern="submit[1-7].csv"
+submitfiles=list.files(pattern = subpattern)
+allsubmit=lapply(submitfiles,read_csv) %>% 
+  bind_cols()
+```
+
+get the average of all rows and put it as separate column
+
+```{r}
+id=allsubmit$Id
+
+names(allsubmit)
+allsubmit=allsubmit[,c(2,4,6,8,10,12,14)]
+allsubmit$row.average=apply(X = allsubmit,MARGIN = 1,mean)
+allsubmit=allsubmit[,c(8)]
+allsubmit$Id=id
+allsubmit=allsubmit[,c(2,1)]
+allsubmit=allsubmit %>% 
+  mutate(SalePrice=row.average)
+allsubmit$row.average=NULL
+write.csv(allsubmit,"submit8.csv",row.names = FALSE)
+```
+
