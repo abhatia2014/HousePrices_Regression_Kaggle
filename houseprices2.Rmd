@@ -116,7 +116,7 @@ garageagena=is.na(trn_tst_numeric$garageage)
 trn_tst_numeric[garageagena,"garageage"]= 0
 sum(is.na(trn_tst_numeric$garageage))
 #next we impute Lot Frontage as a regression linear model function of Lot Area
-imp_lotfront=impute(trn_tst_numeric, cols = list(LotFrontage=imputeLearner(makeLearner("regr.lm"),features = "LotArea"),MasVnrArea=imputeMedian(),BsmtFinSF1=imputeMedian(),BsmtFinSF2=imputeMedian(),BsmtUnfSF=imputeMedian(),
+imp_lotfront=impute(trn_tst_numeric, cols = list(LotFrontage=imputeLearner(makeLearner("regr.ksvm"),features = "LotArea"),MasVnrArea=imputeMedian(),BsmtFinSF1=imputeMedian(),BsmtFinSF2=imputeMedian(),BsmtUnfSF=imputeMedian(),
                                               TotalBsmtSF=imputeMedian(),BsmtFullBath=imputeMedian(),BsmtHalfBath=imputeMedian(),GarageCars=imputeMedian(),GarageArea=imputeMedian()))
 
 imp_lotfront$desc
