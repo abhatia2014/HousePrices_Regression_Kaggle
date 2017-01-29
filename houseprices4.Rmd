@@ -1,9 +1,9 @@
 
 ---
-title: House Prices - Advanced Regression Techniques3
+title: House Prices - Advanced Regression Techniques4
 output: html_notebook
 ---
-In this exercise, we'll try model stacking separately for numeric and factor variables
+In this exercise, we'll try model stacking separately for numeric and factor variables. We'll also use preprocessing
 load the required packages first
 
 ```{r}
@@ -298,8 +298,8 @@ final.resam=makeResampleDesc("CV",iters=5)
 final.bench=benchmark(learners = final.learners,tasks = final.task,resamplings = final.resam,measures = final.measures)
 final.bench
 #final training using the glmnet package
-
-final.train=mlr::train(learner = "regr.glmnet",task = final.task)
+final.wrapped.learner=makePreprocWrapperCaret("regr.randomForest",ppc.pca=TRUE,ppc.thresh=0.9)
+final.train=mlr::train(learner = final.wrapped.learner,task = final.task)
 #predict on the test_select data
 final.predict=predict(final.train,newdata = test_select)
 final.predict
@@ -312,7 +312,7 @@ Make the second submission
 submit1=read_csv("sample_submission.csv")
 submit1$SalePrice=NULL
 submit1$SalePrice=final.predict$data$response
-write.csv(submit1,"submit6.csv",row.names = FALSE)
+write.csv(submit1,"submit7.csv",row.names = FALSE)
 ```
 
 
