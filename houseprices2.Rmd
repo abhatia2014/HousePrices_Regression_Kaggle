@@ -265,6 +265,7 @@ submit1=read_csv("sample_submission.csv")
 submit1$SalePrice=NULL
 submit1$SalePrice=svm_predict1$data$response
 write.csv(submit1,"submit3.csv",row.names = FALSE)
+
 ```
 
 Find variable importance

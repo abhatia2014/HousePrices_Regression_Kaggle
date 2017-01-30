@@ -213,3 +213,159 @@ rm(trn_tst_numeric)
 save.image("myborutaData.RData")
 ```
 
+Add the SalePrice variable back to the trn_mod data
+
+```{r}
+trn_mod$SalePrice=log(SalePrice)
+```
+
+We build the training task for the mod_trn dataset
+
+```{r}
+#before that, let's make sure the levels of training and test set are same for MSSubClass Variable
+table(trn_mod$MSSubClass)
+table(tst_mod$MSSubClass)
+#change one of the MSSubClass rows to 150 to ensure all classes are represented in training set
+trn_mod[656,"MSSubClass"]=150
+train_task=makeRegrTask(data = trn_mod,target = "SalePrice")
+train_task
+```
+
+List all learners that can predict the regression task
+
+```{r}
+reglrns=listLearners(train_task)
+#set up the resampling - cross validation with 5 iterations
+
+all.model.resamp=makeResampleDesc("CV",iters=5)
+
+listMeasures(train_task)
+#define measures
+all.measures=list(rmse,rsq,sse)
+
+```
+
+Build the first model using resample and randomForest learner. Then predict on the train and test set
+
+```{r}
+lrn1=makeLearner("regr.randomForest",fix.factors.prediction = TRUE)
+model1.rf=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
+model1.rf
+names(model1.rf)
+model1.rf$models
+df=model1.rf$pred$data
+df$truth=NULL
+df$iter=NULL
+df$set=NULL
+df=df %>% 
+  mutate(rf.pred=response)
+df$response=NULL
+
+#try predicting on the test set using the model1.rf 
+
+rf.predict=predict(model1.rf$models,newdata=tst_mod)
+tst_level2=data.frame(Id=seq(1461,2919), rf.pred=rf.predict[[5]]$data$response)
+
+```
+
+Building the second model using ksvm model
+
+```{r}
+lrn1=makeLearner("regr.ksvm",fix.factors.prediction = TRUE)
+model1.svm=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
+model1.svm
+
+df$svm.pred=model1.svm$pred$data$response
+
+#try predicting on the test set using the model1.rf 
+
+svm.predict=predict(model1.svm$models,newdata=tst_mod)
+tst_level2$svm.pred=svm.predict[[5]]$data$response
+
+```
+
+Building the third model using glmnet model
+
+```{r}
+lrn1=makeLearner("regr.glmnet",fix.factors.prediction = TRUE)
+model1.glmnet=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
+model1.glmnet
+
+df$glmnet.pred=model1.glmnet$pred$data$response
+
+#try predicting on the test set using the model1.rf 
+
+glm.predict=predict(model1.glmnet$models,newdata=tst_mod)
+tst_level2$glmnet.pred=glm.predict[[5]]$data$response
+
+```
+
+Building the fourth model using earth model
+
+```{r}
+lrn1=makeLearner("regr.earth",fix.factors.prediction = TRUE)
+model1.earth=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
+model1.earth
+
+df$earth.pred=model1.earth$pred$data$response
+
+#try predicting on the test set using the model1.rf 
+
+earth.predict=predict(model1.earth$models,newdata=tst_mod)
+tst_level2$earth.pred=earth.predict[[5]]$data$response
+
+```
+
+Building the fifth model using rpart model
+
+```{r}
+lrn1=makeLearner("regr.rpart",fix.factors.prediction = TRUE)
+model1.rpart=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
+model1.rpart
+
+df$rpart.pred=model1.rpart$pred$data$response
+
+#try predicting on the test set using the model1.rf 
+
+rpart.predict=predict(model1.rpart$models,newdata=tst_mod)
+tst_level2$rpart.pred=rpart.predict[[5]]$data$response
+
+```
+
+
+Now, we perform model stacking or second level predictions
+
+```{r}
+#remove ID variables from the new training and test set
+df$id=NULL
+final_id=tst_level2$Id
+tst_level2$Id=NULL
+#add the training Y back to the model
+df$SalePrice=log(SalePrice)
+#define a new training task on the df dataset
+level2.trn.task=makeRegrTask(data = df,target = "SalePrice")
+#Define the final learner, let's take ksvm
+
+lrn.final=makeLearner("regr.gbm",fix.factors.prediction = TRUE)
+#perform final resampling and predictions on the test set
+
+final.resamp=resample(learner = lrn.final,task = level2.trn.task,measures = all.measures,resampling = all.model.resamp,models = TRUE)
+
+tst_level2$final.pred=NULL
+tst_level2$exp.pred=NULL
+final.predict=predict(final.resamp$models,newdata=tst_level2)
+tst_level2$final.pred=final.predict[[5]]$data$response
+tst_level2$exp.pred=exp(tst_level2$earth.pred)
+```
+
+make submission
+
+
+```{r}
+submit1=read_csv("sample_submission.csv")
+submit1$SalePrice=NULL
+submit1$SalePrice=tst_level2$exp.pred
+write.csv(submit1,"submit10.csv",row.names = FALSE)
+```
+
+
