@@ -197,7 +197,7 @@ boruta_df=attStats(boruta_results)
 boruta_df=boruta_df %>% 
   mutate(borvar=row.names(.))
 acceptedvar=boruta_df %>% 
-  filter(decision=="Confirmed"|decision=="Tentative") %>% 
+  filter(decision=="Confirmed") %>% 
   select(borvar)
 boruta_df %>% 
   filter(decision=="Confirmed") %>% 
@@ -214,6 +214,15 @@ rm(acceptedvar,numcorr,test,train,train_test,trn_tst_numeric_std,trn_tst_modifie
 rm(trn_tst_numeric)
 save.image("myborutaData.RData")
 ```
+
+Combine the trn_mod, tst_mod data once again and do preprocessing using pca
+
+```{r}
+trn_mod$SalePrice=NULL
+#trn_tst=data.frame(rbind(trn_mod,tst_mod))
+
+```
+
 
 Add the SalePrice variable back to the trn_mod data
 
@@ -247,127 +256,80 @@ all.measures=list(rmse,rsq,sse)
 
 ```
 
-Build the first model using resample and randomForest learner. Then predict on the train and test set
+Create a preprocess wrappercaret ksvm learner
 
 ```{r}
-lrn1=makeLearner("regr.randomForest",fix.factors.prediction = TRUE)
-model1.rf=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
-model1.rf
-names(model1.rf)
-model1.rf$models
-df=model1.rf$pred$data
-df$truth=NULL
-df$iter=NULL
-df$set=NULL
-df=df %>% 
-  mutate(rf.pred=response)
-df$response=NULL
+ksvm.lrn=makePreprocWrapperCaret(learner = "regr.ksvm",ppc.pca=TRUE,ppc.thresh=0.90)
+ksvm.lrn
+```
 
-#try predicting on the test set using the model1.rf 
+We now tune the hyperparameters for ksvm. First get the list of hyperparameters to be tuned
 
-rf.predict=predict(model1.rf$models,newdata=tst_mod)
-tst_level2=data.frame(Id=seq(1461,2919), rf.pred=rf.predict[[5]]$data$response)
+```{r}
+getParamSet(ksvm.lrn)
 
 ```
 
-Building the second model using ksvm model
+First we'll create a search space for hyperparameters
 
 ```{r}
-lrn1=makeLearner("regr.ksvm",fix.factors.prediction = TRUE)
-model1.svm=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
-model1.svm
+ps=makeParamSet(
+  makeNumericParam("C",lower=-10,upper=10,trafo = function(x) 10^x),
+  makeNumericParam("sigma",lower=-10,upper=10,trafo = function(x) 10^x)
+)
 
-df$svm.pred=model1.svm$pred$data$response
+#Now define a search algorithm
 
-#try predicting on the test set using the model1.rf 
+search.algo=makeTuneControlRandom(maxit = 100L)
 
-svm.predict=predict(model1.svm$models,newdata=tst_mod)
-tst_level2$svm.pred=svm.predict[[5]]$data$response
+#define the resampling strategy
+
+resamp.strgy=makeResampleDesc("CV",iters=5)
+
+#define performance measure
+
+ksvm.mearsures=list(rmse)
+
+#perform the hyperparameter tuning
+
+result=tuneParams(learner = ksvm.lrn,task = train_task,resampling = resamp.strgy,measures = ksvm.mearsures,par.set = ps,control = search.algo)
+result
+```
+
+Let's further tune the hyperparameters in the small range around this interval
+
+```{r}
+ps2=makeParamSet(
+  makeNumericParam("C",lower=40,upper=50),
+  makeNumericParam("sigma",lower=0.00100,upper=0.00300)
+)
+
+search.algo2=makeTuneControlRandom(maxit = 30L)
+
+result2=tuneParams(learner = ksvm.lrn,task = train_task,resampling = resamp.strgy,measures = ksvm.mearsures,par.set = ps2,control = search.algo2)
+
 
 ```
 
-Building the third model using glmnet model
+Feed the parameters in the learner and do the model training
 
 ```{r}
-lrn1=makeLearner("regr.glmnet",fix.factors.prediction = TRUE)
-model1.glmnet=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
-model1.glmnet
+ksvm.lrn2=makePreprocWrapperCaret(learner = "regr.ksvm",ppc.pca=TRUE,ppc.thresh=0.90,par.vals=result$x)
 
-df$glmnet.pred=model1.glmnet$pred$data$response
-
-#try predicting on the test set using the model1.rf 
-
-glm.predict=predict(model1.glmnet$models,newdata=tst_mod)
-tst_level2$glmnet.pred=glm.predict[[5]]$data$response
-
+ksvm.model=mlr::train(learner = ksvm.lrn2,task = train_task)
+ksvm.model
+getLearnerModel(ksvm.model)
+getLearnerModel(ksvm.model,more.unwrap = TRUE)
+ksvm.predict=predict(ksvm.model,newdata = tst_mod)
+ksvm.predict$data
 ```
-
-Building the fourth model using earth model
-
-```{r}
-lrn1=makeLearner("regr.earth",fix.factors.prediction = TRUE)
-model1.earth=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
-model1.earth
-
-df$earth.pred=model1.earth$pred$data$response
-
-#try predicting on the test set using the model1.rf 
-
-earth.predict=predict(model1.earth$models,newdata=tst_mod)
-tst_level2$earth.pred=earth.predict[[5]]$data$response
-
-```
-
-Building the fifth model using rpart model
-
-```{r}
-lrn1=makeLearner("regr.rpart",fix.factors.prediction = TRUE)
-model1.rpart=resample(learner = lrn1,task = train_task,resampling = all.model.resamp,measures = all.measures,models = TRUE)
-model1.rpart
-
-df$rpart.pred=model1.rpart$pred$data$response
-
-#try predicting on the test set using the model1.rf 
-
-rpart.predict=predict(model1.rpart$models,newdata=tst_mod)
-tst_level2$rpart.pred=rpart.predict[[5]]$data$response
-
-```
-
-
-Now, we perform model stacking or second level predictions
-
-```{r}
-#remove ID variables from the new training and test set
-df$id=NULL
-final_id=tst_level2$Id
-tst_level2$Id=NULL
-#add the training Y back to the model
-df$SalePrice=log(SalePrice)
-#define a new training task on the df dataset
-level2.trn.task=makeRegrTask(data = df,target = "SalePrice")
-#Define the final learner, let's take ksvm
-
-lrn.final=makeLearner("regr.gbm",fix.factors.prediction = TRUE)
-#perform final resampling and predictions on the test set
-
-final.resamp=resample(learner = lrn.final,task = level2.trn.task,measures = all.measures,resampling = all.model.resamp,models = TRUE)
-
-tst_level2$final.pred=NULL
-tst_level2$exp.pred=NULL
-final.predict=predict(final.resamp$models,newdata=tst_level2)
-tst_level2$final.pred=final.predict[[5]]$data$response
-tst_level2$exp.pred=exp(tst_level2$earth.pred)
-```
-
-make submission
 
 
 ```{r}
 submit1=read_csv("sample_submission.csv")
 submit1$SalePrice=NULL
-submit1$SalePrice=tst_level2$exp.pred
-write.csv(submit1,"submit10.csv",row.names = FALSE)
+submit1$SalePrice=exp(ksvm.predict$data$response)
+write.csv(submit1,"submit11.csv",row.names = FALSE)
 ```
 
 
