@@ -1,0 +1,343 @@
+---
+title: House Prices - Advanced Regression Techniques5
+output: html_notebook
+---
+In this exercise, we'll try model stacking separately for numeric and factor variables. We'll also use preprocessing
+load the required packages first
+
+```{r}
+library(mlr,quietly = TRUE,warn.conflicts = FALSE)
+library(dplyr,quietly = TRUE,warn.conflicts = FALSE)
+library(ggplot2,quietly = TRUE,warn.conflicts = FALSE)
+library(caret,quietly = TRUE,warn.conflicts = FALSE)
+library(purrr,quietly = TRUE,warn.conflicts = FALSE)
+library(data.table,quietly = TRUE,warn.conflicts = FALSE)
+library(readr,quietly = TRUE,warn.conflicts = FALSE)
+library(Boruta,warn.conflicts = FALSE)
+library(xgboost,quietly = TRUE,warn.conflicts = FALSE)
+```
+
+Load the test and train datasets
+
+```{r}
+train=read.csv("train.csv",stringsAsFactors = FALSE)
+test=read.csv("test.csv",stringsAsFactors = FALSE)
+```
+
+Rbind the two datasets to perform feature engineering, will later separate the two datasets again. Remove the variable Sale Price from the training set
+
+```{r}
+SalePrice=train$SalePrice
+train$SalePrice=NULL
+train_test=rbind(train,test)
+```
+
+Find the str of the combined train_test dataset. Also take the summary
+
+```{r}
+str(train_test)
+
+summary(train_test)
+
+```
+
+
+Take all 'Character' class types and convert to factor (categorical) types. Add other numeric variables identified above and convert to factor
+
+```{r}
+trn_tst_chr=train_test %>% 
+  select_if(is.character) %>% 
+  mutate_each(funs(as.factor))
+
+str(trn_tst_chr)
+```
+
+find the number of NAs in each of the factor variables
+
+```{r}
+colSums(sapply(trn_tst_chr,is.na))
+```
+
+Variables Alley, FireplaceQu, PoolQC, Fence, MiscFeature have very high NAs and are removed
+
+```{r}
+trn_tst_chr$Alley=NULL
+trn_tst_chr$FireplaceQu=NULL
+trn_tst_chr$PoolQC=NULL
+trn_tst_chr$Fence=NULL
+trn_tst_chr$MiscFeature=NULL
+# re-run the command for finding total NAs in the factor variables
+colSums(sapply(trn_tst_chr,is.na))
+```
+
+All variables with Garage that have missing values should be changed to none, likewise all variablesthat have bmst missing values should also be changed to none. Probably these houses don't have a garage/ basement
+
+```{r}
+
+#impute the other garage types using the impute function of mlr package
+
+imp_fctr=impute(trn_tst_chr,cols = list(GarageType="none",GarageFinish="none",GarageQual="none",GarageCond="none",
+                                      BsmtQual="none",BsmtCond="none",BsmtExposure="none",BsmtFinType1="none",
+                                      BsmtFinType2="none"))
+imp_fctr$data
+
+colSums(sapply(imp_fctr$data,is.na))
+trn_tst_chr=imp_fctr$data
+#for the remaining variables, we impute using impute mode 
+imp_fctr=impute(trn_tst_chr,classes = list(factor=imputeMode()))
+trn_tst_chr=imp_fctr$data
+#check once again for any missing values
+colSums(sapply(trn_tst_chr,is.na))
+#no missing values now
+```
+
+Next, Take all numerics variables separately 
+
+```{r}
+trn_tst_num=sapply(train_test,is.numeric)
+trn_tst_numeric=train_test[,trn_tst_num]
+#convert year variables to age and remove year variables
+library(lubridate)
+trn_tst_numeric$builtage=as.numeric(year(today())-trn_tst_numeric$YearBuilt)
+trn_tst_numeric$YearBuilt=NULL
+trn_tst_numeric$remodelledage=as.numeric(year(today())-trn_tst_numeric$YearRemodAdd)
+trn_tst_numeric$YearRemodAdd=NULL
+trn_tst_numeric$garageage=as.numeric(year(today())-trn_tst_numeric$GarageYrBlt)
+trn_tst_numeric$GarageYrBlt=NULL
+trn_tst_numeric$soldAge=as.numeric(year(today())-trn_tst_numeric$YrSold)
+trn_tst_numeric$YrSold=NULL
+```
+
+
+Find the number of NAs in the numeric variables
+
+```{r}
+colSums(sapply(trn_tst_numeric,is.na))
+```
+
+There are not too many columns with many NAs. We can impute the missing values by a measure of centrality - mean or median. For the lot Frontage, there are 486 missing values(~25%)- these have to be imputed as a function of Lot Area. For missing values in Garage age- those will be 0 as they represent houses with no garages. For MasVnrArea and Basement missing values- we substitue 0 
+
+```{r}
+#first GarageAge
+
+#next we impute Lot Frontage as a regression linear model function of Lot Area
+imp_lotfront=impute(trn_tst_numeric, cols = list(LotFrontage=imputeLearner(makeLearner("regr.lm"),features = "LotArea"),MasVnrArea=0,BsmtFinSF1=0,BsmtFinSF2=0,BsmtUnfSF=0, TotalBsmtSF=0, BsmtFullBath=0, BsmtHalfBath=0, GarageCars=0,GarageArea=0,garageage=0))
+
+imp_lotfront$desc
+head(imp_lotfront$data,10)
+# again find the total NAs in each variable
+colSums(sapply(imp_lotfront$data,is.na))
+trn_tst_numeric=imp_lotfront$data
+colSums(sapply(trn_tst_numeric,is.na))
+# no NAs left in the model
+```
+
+
+Check and remove any constant features (min variation) as they don't help in machine learning, The percentage of variabilitiy is kept at 5% meaning all features with below 5% variability are removed
+
+```{r}
+trn_tst_numeric=removeConstantFeatures(trn_tst_numeric,perc = 0.05)
+
+```
+
+5 variables with low variance were removed. 
+LowQualFinSF,KitchenAbvGr,X3SsnPorch,PoolArea,MiscVal
+Next visualize intra feature correlation. Load package corrplot
+
+```{r}
+library(corrplot)
+
+numcorr=cor(trn_tst_numeric)
+corrplot(numcorr)
+```
+
+Find variables of high correlation with each other (multicollinearity) and remove them. Use findCorrelation function from Caret package. All variables with more than 70% correlation are flagged and removed
+
+```{r}
+highcorvar=findCorrelation(numcorr,cutoff = 0.70)
+# 3 Variables have high multicollinearity
+names(trn_tst_numeric[,highcorvar])
+# "GrLivArea"    "X1stFlrSF"    "GarageCars"  are the variables with high multicollinearity
+trn_tst_numeric=trn_tst_numeric[,-highcorvar]
+
+```
+
+Next, we standardize the numerical vaiables using the normalizeFeatures function of mlr package using method= standardize that centers and scales all numerical variables
+
+```{r}
+trn_tst_numeric$Id=NULL
+trn_tst_numeric_std=normalizeFeatures(trn_tst_numeric,method = "standardize")
+```
+
+combine the two datasets and perform the Boruta function to separate out the feature importance. Before that we separate the data into training and test set
+
+```{r}
+trn_tst_modified=cbind(trn_tst_chr,trn_tst_numeric_std)
+trn_mod=trn_tst_modified[1:1460,]
+tst_mod=trn_tst_modified[1461:2919,]
+
+boruta_results=Boruta(trn_mod,SalePrice,maxRuns = 100,doTrace = 1,
+                        respect.unordered.factors=TRUE,pValue = 0.001)
+boruta_results
+#Boruta performed 249 iterations in 23.68415 mins.
+# 47 attributes confirmed important: BedroomAbvGr, BldgType, BsmtCond, BsmtExposure, BsmtFinSF1 and 42
+#more;
+ #13 attributes confirmed unimportant: BsmtHalfBath, Condition2, Electrical, ExterCond, Functional and
+#8 more;
+ #6 tentative attributes left: BsmtFinSF2, BsmtFinType2, Condition1, EnclosedPorch, SaleType and 1
+#more;
+
+boruta_df=attStats(boruta_results)
+boruta_df=boruta_df %>% 
+  mutate(borvar=row.names(.))
+acceptedvar=boruta_df %>% 
+  filter(decision=="Confirmed"| decision=="Tentative") %>% 
+  select(borvar)
+boruta_df %>% 
+  filter(decision=="Confirmed") %>% 
+ggplot(aes(reorder(borvar,maxImp),maxImp,fill=decision))+geom_bar(stat="identity")+coord_flip()+geom_text(aes(borvar,maxImp, label=round(maxImp,1)),size=3)+theme(legend.position = "none")
+```
+
+select only features that are confirmed or tentative  in both training and test models
+
+```{r}
+trn_mod=trn_mod[,acceptedvar$borvar]
+tst_mod=tst_mod[,acceptedvar$borvar]
+#remove all other variables
+rm(acceptedvar,numcorr,test,train,train_test,trn_tst_numeric_std,trn_tst_modified,trn_tst_chr,trn_tst_num)
+rm(trn_tst_numeric)
+
+```
+
+
+Add the SalePrice variable back to the trn_mod data
+
+```{r}
+trn_mod$SalePrice=log(SalePrice)
+```
+
+Now, we convert the categorical variables in both trn_mod and tst_mod datasets to numerical using dummyVars function of caret package
+
+```{r}
+dv=dummyVars("~.",data = trn_mod,fullRank = TRUE)
+trn_mod_dum=data.frame(predict(dv,newdata=trn_mod))
+names(trn_mod_dum)
+
+#for the tst_mod now
+
+dv2=dummyVars("~.",data=tst_mod,fullRank=TRUE)
+tst_mod_dum=data.frame(predict(dv2,newdata=tst_mod))
+sapply(X = trn_mod_dum,class)
+```
+
+For the second time, check and remove any constant features (min variation) as they don't help in machine learning, The percentage of variabilitiy is kept at 5% meaning all features with below 5% variability are removed
+
+```{r}
+trn_mod_dum=removeConstantFeatures(trn_mod_dum,perc = 0.05)
+names=colnames(trn_mod_dum)[1:94]
+tst_mod_dum=tst_mod_dum[,names]
+```
+
+Once again, find variables of high correlation with each other (multicollinearity) and remove them. Use findCorrelation function from Caret package. All variables with more than 70% correlation are flagged and removed
+
+```{r}
+numcorr=cor(trn_mod_dum)
+highcorvar=findCorrelation(numcorr,cutoff = 0.70)
+highcorvar=highcorvar[2:23]
+# 23 Variables have high multicollinearity
+highcorr=names(trn_mod_dum[,highcorvar])
+
+# "GrLivArea"    "X1stFlrSF"    "GarageCars"  are the variables with high multicollinearity
+trn_mod_dum=trn_mod_dum[,-highcorvar]
+tst_mod_dum=tst_mod_dum[,-highcorvar]
+
+```
+
+We'll use ksvm package
+
+```{r}
+
+gbm.task=makeRegrTask(data = trn_mod_dum,target = "SalePrice")
+gbm.lrn=makeLearner("regr.ksvm",fix.factors.prediction = TRUE)
+gbm.cv=makeResampleDesc("CV",iters=7)
+gbm.measures=list(rmse,rsq)
+
+gbm.resample=resample(learner = gbm.lrn,task = gbm.task,resampling = gbm.cv,measures = gbm.measures,models = TRUE)
+gbm.resample$models
+
+
+
+#define the resampling strategy
+
+resamp.strgy=makeResampleDesc("CV",iters=5)
+
+#define performance measure
+
+ksvm.mearsures=list(rmse)
+
+
+ps2=makeParamSet(
+  makeNumericParam("C",lower=40,upper=50),
+  makeNumericParam("sigma",lower=0.00100,upper=0.00300)
+)
+
+search.algo2=makeTuneControlRandom(maxit = 30L)
+
+result2=tuneParams(learner = gbm.lrn,task = gbm.task,resampling = resamp.strgy,measures = ksvm.mearsures,par.set = ps2,control = search.algo2)
+result2
+ksvm.lrn2=setHyperPars(makeLearner("regr.ksvm"))
+ksvm.train=mlr::train(learner = ksvm.lrn2,task = gbm.task)
+ksvm.predict=predict(object = ksvm.train,newdata=tst_mod_dum)
+train_ens=predict(ksvm.train,task=gbm.task)
+train_ens=data.frame(train_ens)
+colnames(train_ens)="pred.ksvm"
+test_ens=data.frame(ksvm.predict$data$response)
+test_ens$ksvm.predict.data.response=exp(test_ens$ksvm.predict.data.response)
+colnames(test_ens)="pred.ksvm"
+train_ens$SalePrice=SalePrice
+```
+
+
+Model 2 using RandomForest
+
+```{r}
+
+getParamSet("regr.randomForest")
+rf.lrn=makeLearner("regr.randomForest",par.vals = list(ntree=1000))
+rf.train=mlr::train(learner = rf.lrn,task = gbm.task)
+rf.train.predict=predict(object = rf.train,task=gbm.task)
+train_ens$pred.rf=exp(rf.train.predict$data$response)
+rf.predict=predict(object = rf.train,newdata=tst_mod_dum)
+test_ens$pred.rf=exp(rf.predict$data$response)
+```
+
+
+
+```{r}
+submit1=read_csv("sample_submission.csv")
+submit1$SalePrice=NULL
+submit1$SalePrice=exp(rf.predict$data$response)
+write.csv(submit1,"submit17.csv",row.names = FALSE)
+```
+
+Lets try regr.ksvm to try and estimate the ensemble 
+
+```{r}
+glm.task=makeRegrTask(data=train_ens,target = "SalePrice")
+glm.lrn=makeLearner("regr.ksvm")
+glm.resamp=makeResampleDesc("CV",iters=7,predict = "both")
+glm.measures=list(rmse,rsq)
+glm.resample=resample(learner = glm.lrn,task = glm.task,resampling = glm.resamp,measures = glm.measures,models = TRUE)
+```
+
+train and predict
+
+```{r}
+glm.train=mlr::train(learner = glm.lrn,task = glm.task)
+glm.predict=predict(glm.train,newdata=test_ens)
+submit1$SalePrice=glm.predict$data$response
+write.csv(submit1,"submit19.csv",row.names = FALSE)
+```
+
+
+Perform a benchmark experiment 
