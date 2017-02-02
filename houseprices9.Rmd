@@ -263,7 +263,8 @@ metric="RMSE"
 #first earth
 fit.cubist=train(SalePrice~.,data=trn_mod_dum,method="earth",metric=metric,trControl=control)
 fit.gbm=train(SalePrice~.,data=trn_mod_dum,method="gbm",metric=metric,trControl=control)
-
+trn_mod_dum$SalePrice=NULL
+#fit.xgb=train(x=data.matrix(trn_mod_dum),y=data.matrix(log(SalePrice)),method="xgbLinear",metric=metric,trControl=control)
 boosting.results=resamples(list(earth=fit.cubist,gbm=fit.gbm))
 boosting.results
 summary(boosting.results)
@@ -303,9 +304,11 @@ stack.svm
 stack.gbm=caretStack(models,method="gbm",metric=metric,trControl=control)
 stack.gbm
 
-#using stack.gbm to predict 
-stack.predict=predict(stack.gbm,newdata=tst_mod_dum)
+#using stack.svm to predict 
+stack.predict=predict(stack.svm,newdata=tst_mod_dum)
 stack.predict
+
+#do one more stacking using xgboost method
 ```
 
 make the final predictions and submissions
@@ -315,7 +318,8 @@ make the final predictions and submissions
 submit1=read_csv("sample_submission.csv")
 submit1$SalePrice=NULL
 submit1$SalePrice=exp(stack.predict)
-write.csv(submit1,"submit20.csv",row.names = FALSE)
+write.csv(submit1,"submit21.csv",row.names = FALSE)
 ```
+
 
 
