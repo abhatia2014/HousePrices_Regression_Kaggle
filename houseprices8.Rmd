@@ -340,4 +340,26 @@ write.csv(submit1,"submit19.csv",row.names = FALSE)
 ```
 
 
-Perform a benchmark experiment 
+
+```{r}
+getParamSet("regr.cubist")
+cub.learner=makeLearner("regr.cubist")
+cub.resamp=makeResampleDesc("CV",iters=7,predict = "both")
+cub.measures=list(rmse,rsq)
+cub.resample=resample(learner = cub.learner,task = gbm.task,resampling = cub.resamp,measures = cub.measures,models = TRUE)
+list.learners=list("regr.cubist","regr.randomForest","regr.ksvm","regr.glmnet","regr.earth","regr.rpart")
+
+bench.study=benchmark(learners = list.learners,tasks = gbm.task,resamplings = cub.resamp,measures = cub.measures,keep.pred = TRUE,models = TRUE)
+list.learners2=list("regr.gausspr","regr.gbm","regr.svm","regr.nnet")
+bench.study2=benchmark(learners = list.learners2,tasks = gbm.task,resamplings = cub.resamp,measures = cub.measures,keep.pred = TRUE,models = TRUE)
+bench.study
+bench.study2
+total.bench=mergeBenchmarkResults(list(bench.study,bench.study2))
+total.bench$results$trn_mod_dum
+benchmarkpredictions=getBMRPredictions(total.bench)
+pred1=data.frame(benchmarkpredictions$trn_mod_dum[[3]]$data)
+pred1=pred1 %>% 
+  filter(iter==4)%>%
+  arrange(id)
+```
+
